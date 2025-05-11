@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<!-- saved from url=(0042)https://wohanley.com/posts/visual-yscript/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta author="William O&#39;Hanley">
+<link title="Atom feed for posts to wohanley.com" rel="alternate" type="application/atom+xml" href="https://wohanley.com/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="anonymous">
+<link rel="stylesheet" href="./yscript_files/base.css">
+<script type="text/javascript">window.goatcounter = { path: function (p) { return 'wohanley.com' + p; } }</script>
+<script type="text/javascript" data-goatcounter="https://wohanley.goatcounter.com/count" async="" src="./yscript_files/count.js"></script>
+
+    <link rel="stylesheet" href="./yscript_files/essay.css" type="text/css">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com/">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com/" crossorigin="anonymous">
+<link rel="stylesheet" href="./yscript_files/iosevka.min.css">
+<link rel="stylesheet" href="./yscript_files/post.css">
+<title>Visual propositional logic with yscript ⋮ William O'Hanley</title></head>
+  <body>
+    <article itemscope="" itemtype="http://schema.org/Article">
+      <meta itemprop="identifier" content="tag:wohanley@wohanley.com,2023-01-12:visual-yscript">
+      <meta itemprop="description" content="a visual development environment for yscript">
+      <header>
+        <h1>Visual propositional logic with yscript</h1>
+        <div class="subtitle">
+          <time itemprop="issued" datetime="2023-01-12">12 January 2023</time><span itemprop="author" itemscope="" itemtype="https://schema.org/Person"><span itemprop="name">William O'Hanley
+        </span></span>
+</div>
+      </header>
+      <section class="main-content">
+        <div id="toc">
+          <h3>Contents</h3>
+        <ul><li><a href="https://wohanley.com/posts/visual-yscript/#yscript">yscript</a></li><li><a href="https://wohanley.com/posts/visual-yscript/#explanation">Explanation and understanding</a></li><li><a href="https://wohanley.com/posts/visual-yscript/#visual-yscript">Visual yscript</a></li><li><a href="https://wohanley.com/posts/visual-yscript/#next">Next</a></li></ul></div>
+        <p class="intro">I've been puttering for a while with a <a href="https://github.com/codexstanford/vscode-yscript">VS Code extension</a> for yscript, and I wanted to talk a bit about my motivations, yscript, and the technicalities of the project. This post is a companion to my short talk at <a href="https://popl23.sigplan.org/home/prolala-2023#program">ProLaLa 2023</a>.</p>
+        <h2 id="yscript"><a class="headline-anchor" href="https://wohanley.com/posts/visual-yscript/#yscript"></a>yscript</h2>
+        <p>yscript is
+          </p><figure>
+            <blockquote>a computer language for representing and manipulating propositions. It can be used to represent real-world rules such as legislation or codes of practice. […] When yscript code is executed, it results in a dialog or consultation. A series of questions are asked, and conclusions are made.</blockquote>
+            <figcaption><span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><cite class="footnote">Andrew Mowbray, <i>Coding in yscript: A Description of the yscript Language</i> (Australasian Legal Information Institute, 2007), <a href="https://austlii.community/foswiki/pub/DataLex/WebHome/ys-manual.pdf">https://austlii.community/foswiki/pub/DataLex/WebHome/ys-manual.pdf</a>, 11.</cite></span></span></figcaption>
+          </figure>
+        <p></p>
+        <p>It looks like this:</p>
+        <figure>
+          <pre><code><span class="highlight__k">RULE</span> take an umbrella <span class="highlight__k">PROVIDES</span>
+  you should take an umbrella <span class="highlight__k">ONLY IF</span>
+    you have an umbrella <span class="highlight__k">AND</span>
+    you might need an umbrella</code></pre>
+        </figure>
+        <p>yscript is developed by Andrew Mowbray at <abbr title="Australasian Legal Information Institute">AustLII</abbr> as part of <a href="https://austlii.community/wiki/DataLex/">DataLex</a>, a broader toolkit for rule-based legal AI. Beyond yscript, DataLex also includes tools for running dialogs through a friendly chat interface, automatically processing legislation into “first-cut” yscript code, visually cross-referencing facts, and more cool stuff.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">DataLex has good ideas, and a lot of what I'm trying to do is to just tighten the feedback loop on things DataLex does already.</span></span></span></p>
+        <p>
+          For this project, we deal with a relatively small subset of yscript:
+          </p><ul>
+            <li>A yscript program is a list of <em>rules</em>. Rules have names, which are fragments of natural language called “descriptors”.</li>
+            <li>A rules contains a list of <em>statements</em>, which are either <code class="highlight__k">IF THEN</code> or <code class="highlight__k">ONLY IF</code>. For our purposes these correspond roughly to unidirectional and bidirectional implication, respectively.</li>
+            <li>Statements are composed of boolean expressions over <em>facts</em>, which are logical propositions. Facts, like rules, are named by descriptors.</li>
+          </ul>
+        <p></p>
+        <p>Recall that execution of a yscript program results in a dialog. The dialog begins with a rule declared as a <code class="highlight__k">GOAL</code>,<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">e.g. <code><span class="highlight__k">GOAL RULE</span> take an umbrella <span class="highlight__k">PROVIDES</span></code>...</span></span></span> or the first rule in the program if no <code class="highlight__k">GOAL</code> exists. Each statement in the rule is executed in order. If a fact is encountered that has no recorded value, the user will be asked to provide one. After the user answers a question, if the new fact provides enough information to infer additional facts, those inferences are made. Evaluation then <strong>restarts from the beginning</strong> with the new facts,<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><cite class="footnote"><i>Coding in yscript</i>, 73.</cite></span></span> which means we don't need to worry about retractions. yscript also doesn't allow recursion,<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><cite class="footnote"><i>Coding in yscript</i>, 77.</cite></span></span> so negation semantics are simple.</p>
+
+        <h2 id="explanation"><a class="headline-anchor" href="https://wohanley.com/posts/visual-yscript/#explanation"></a>Explanation and understanding</h2>
+        <p><em>Explainability</em> is a bullet point you'll find on the website of any self-respecting system for computational legal reasoning. It's easy to agree with the idea that we ought to be able to explain the findings of this kind of system. But I do get the feeling that we're talking past each other a bit, that we don't quite agree on what “explanation” means. The most common thing seems to be evaluation traces, which are helpful but limited, as I'll mention later. I think of my own project here as bearing on the idea of explainability, so I want to be clear on what I mean by it, and what I think explanations ought to do in the legal domain.</p>
+        <p>Here's one (paraphrased) definition of explanation:<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><cite class="footnote">Daniel A. Wilkenfeld, “Functional Explaining: A New Approach to the Philosophy of Explanation,” <i>Synthese</i> 191, no. 14 (September 1, 2014): 3367–91, <a href="https://doi.org/10.1007/s11229-014-0452-z">https://doi.org/10.1007/s11229-014-0452-z</a>.</cite></span></span></p>
+        <ol>
+          <li>To explain X is to produce a representation of X that, when internalized by the audience, produces improved understanding of X.</li>
+          <li>Whether a representation suffices for understanding is determined by what the understander can do with that representation in contextually relevant counterfactuals.</li>
+        </ol>
+        <p>So understanding is constitutive of explanation: to count as an explanation, it has to improve understanding. We can consider understanding to be constituted by internalized representations which are useful. Useful representations help you to accomplish something, e.g. make predictions, <em>in meaningfully different circumstances</em> (that is, in “contextually relevant counterfactuals”).</p>
+        <p>This is, to my mind, a helpful definition of explanation.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">A useful representation of explanation, even.</span></span></span> But the concept needs some extra colour in the domain of legal reasoning, where we aren't (or shouldn't be) concerned so much with correctness as <em>judgment</em>. Some insight emerges from the <abbr title="Legal Knowledge Interchange Format">LKIF</abbr> and Carneades projects on this point:<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><cite class="footnote">Thomas F. Gordon, “Constructing Legal Arguments with Rules in the Legal Knowledge Interchange Format (LKIF),” in <i>Computable Models of the Law: Languages, Dialogues, Games, Ontologies</i> (Berlin, Heidelberg: Springer-Verlag, 2008), 162–84, <a href="https://doi.org/10.1007/978-3-540-85569-9_11">https://doi.org/10.1007/978-3-540-85569-9_11</a>.</cite></span></span></p>
+        <ul>
+          <li>“[…] legal reasoning cannot be viewed, in general, as the application of some deductive logic, such as first-order predicate logic, to some theory of the facts and relevant legal domain.”</li>
+          <li>“Legal rules are neither material implications nor procedures for updating variables in working memory, but rather schemes for constructing legal arguments.”</li>
+        </ul>
+        <p>For law, the issue isn't merely explanation but <em>justification</em>. It is precisely the lack of exact, inarguably correct logic that makes law work: argument, judgment, and contestation are foundational to rule of law.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">A critique of computational legalism is in <cite>Laurence Diver, “Digisprudence: The Design of Legitimate Code,” <i>Law, Innovation and Technology</i> 13, no. 2 (July 3, 2021): 325–54, <a href="https://doi.org/10.1080/17579961.2021.1977217">https://doi.org/10.1080/17579961.2021.1977217</a>.</cite></span></span></span> The thing we want to explain isn't so much the logical validity of a particular legal finding (which usually isn't even provable per se), it's the structure of the space of potential arguments.</p>
+        <p>This is why I think evaluation traces don't go far enough as explanations. They do supply correct and relevant information, but not all of it: they don't tell you anything about counterfactuals or about other potential lines of argument. It's somewhat helpful, when you're trying to demonstrate <i>q</i>, to be told that <i>q</i> must be true because <i>p</i> is true and <i>p</i> implies <i>q</i>. It is much more helpful to be told that:</p>
+        <ul>
+          <li><i>p</i> also implies <i>r</i> (which you didn't know you should ask about).</li>
+          <li>Even if <i>p</i> were false, <i>s</i> (which you didn't know existed) also implies <i>q</i>, so you could try that instead.</li>
+          <li>There are ways to show <i>t</i> (which is the thing you actually need to demonstrate, although you didn't know that), without needing to say anything about <i>q</i>.</li>
+        </ul>
+        <p>This is the holistic kind of explanation, raising relevant counterfactuals whether you thought to ask about them or not, that we expect from lawyers. It's the kind of explanation we really ought to expect from our computational systems as well.</p>
+
+        <h2 id="visual-yscript"><a class="headline-anchor" href="https://wohanley.com/posts/visual-yscript/#visual-yscript"></a>Visual yscript</h2>
+        <p>Declarative code lends itself nicely to visualization. For logic programs in particular, the classic boxes + wires approach is convenient:</p>
+
+        <figure class="full-width">
+            <video controls="" src="./rules.mp4">Using vscode-yscript to connect rules. Typing the text content of a rule is shown to produce a corresponding box in the graph view, and when a fact name is typed that matches its neighbor, a line is drawn connecting them.</video>
+        </figure>
+
+        <p>We get the wires for free! It's easy to analyze a logic program and figure out the dependencies between rules - that's the whole idea.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">This is also easy for predicate logic, and I've <a href="https://github.com/codexstanford/vscode-epilog">done it</a> for <a href="http://epilog.stanford.edu/homepage/index.php">Epilog</a>, but I want to stick with propositions for now.</span></span></span> Plot your rules along such a dependency graph and hey presto.</p>
+        <p>As for the rules themselves, we use <a href="https://github.com/codexstanford/tree-sitter-yscript">a Tree-sitter parser</a> to build a concrete syntax tree from the source text, then derive HTML views of each rule in that tree. Tree-sitter is very fast, so we can run it on every keystroke and maintain the correspondence between the graph and the source text. Because Tree-sitter produces a <em>concrete</em> syntax tree, we know exactly what range in the source text each syntax node originates from, so we have enough information to navigate from a rule or fact in the graph back to its source. This is useful on a larger program:</p>
+
+        <figure class="full-width">
+            <video controls="" src="./locate.mp4">Tracing a rule box in the graph back to its origin in the text. The name of the rule is clicked where it appears in the graph, resulting in the corresponding text being highlighted in the editor.</video>
+        </figure>
+
+        <p>Rules are only half the story. Alongside each referenced fact in the rules, we show the current value for that fact. Fact values might be either explicitly asserted by the user or inferred from assertions. Explicit assertions are rendered in bold. We can also select a goal rule and start looking for fact values. This will eventually lead us to derive a value for the destination fact(s) of our goal rule in the same manner as a usual yscript dialog:</p>
+
+        <figure class="full-width">
+            <video controls="" src="./goal.mp4">Goal-directed execution of the yscript program. Each required fact is pointed to in turn by a blue hand icon, and the facts are clicked to set values. Eventually a value for the goal fact is determined.</video>
+        </figure>
+
+        <p>But we can also assert a value for any fact we want, not just the one yscript is asking about. We can even assert a value for a <em>derived</em> fact, and skip its dependencies. If, in this way, we give yscript enough information to answer its own question, it can move on to the next:</p>
+
+        <figure class="full-width">
+            <video controls="" src="./shortcut.mp4">More goal-directed yscript execution, but this time facts are clicked that are not currently pointed at by the hand icon. Implications are propagated through the graph, short-circuiting some yscript evaluation.</video>
+        </figure>
+
+        <p>This is powered by <a href="https://github.com/Z3Prover/z3/wiki">Z3</a>, which can solve quantifier-free finite domain logic, which has declarative semantics pretty compatible with yscript's procedural semantics. It's also very convenient to set up sessions with Z3 every time a fact changes, so we don't need to rewind yscript evaluation or maintain a bunch of incremental state.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">Although Z3 does have incremental modes, if we wanted to use them.</span></span></span> Z3 can also prove unsatisfiability, which makes it easy to prevent contradictory assertions: when we assert a fact, we first check that after doing so, our constraints will remain somehow satisfiable. This is what lets us jump around the graph and enter facts wherever we want.</p>
+
+        <h2 id="next"><a class="headline-anchor" href="https://wohanley.com/posts/visual-yscript/#next"></a>Next</h2>
+        <p>This coordination of procedural and declarative representations of rules is powerful. We get the benefit of being guided through the rules, but we don't need to give up control. If we see something we're not being asked about but which we find interesting, we can always take the wheel, and give it back when we're done. If we're being asked about things we aren't interested in, we can assert something lower down the tree and move on. We get to use the computer, rather than the other way around. There are lots of promising directions to take this kind of tooling:</p>
+        <ul>
+            <li>More sophisticated logics could be supported. I started with propositional logic because it's easiest, but I have the bones of similar tooling for predicate logic<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote"><a href="https://github.com/codexstanford/vscode-epilog">Via Epilog</a>.</span></span></span> as well.</li>
+            <li>The graph could be part of an ordinary web page. VS Code provides useful features for developers, but for people who don't want to edit the rules, there's no need for it.<span class="footnote__wrapper"><span class="footnote__anchor"></span><span class="footnote__content"><span class="footnote">Even for developers, VS Code is probably <a href="https://ghuntley.com/fracture/">not open enough</a> to be relied upon as a member of the rules as code ecosystem.</span></span></span></li>
+            <li>Dynamic forms could be created all at once rather than, as with the dialog-based approach, one question at a time. We have, at any given time, enough information to compute which facts could change the outcome, and no inherent need to impose an order on answering them.</li>
+            <li>Quality of life improvements: mousing over a fact could highlight all of its dependents and dependencies, subtle animations could make moving parts easier to track, the list of known fact values could be displayed all in one place, etc.</li>
+        </ul>
+        <p>In general, ease of static analysis is one of the major advantages of rules as a control structure, and I think we could lean on it a lot harder in our interfaces. I've found this to be a really nice way of interacting with rules, and I hope to see (and do!) more projects along these lines.</p>
+      </section>
+    </article>
+  
+
+</body></html>
