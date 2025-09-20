@@ -7,7 +7,7 @@ import { Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface SearchBarProps {
-  onSearch: (term: string) => void
+  onSearch: (term: string) => void | Promise<void>
   placeholder?: string
   initialValue?: string
   className?: string
