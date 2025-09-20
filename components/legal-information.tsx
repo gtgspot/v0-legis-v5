@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { searchLegalSources } from "@/app/actions/legal-sources"
+import type { LegalSearchFilters, LegalSearchResult } from "@/app/actions/legal-sources"
 import { SearchBar } from "./search-bar"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import {
@@ -44,35 +46,75 @@ import { LegalDocumentViewer } from "./legal-document-viewer"
 import { LegalCitationGenerator } from "./legal-citation-generator"
 
 // Types for legal information
-interface LegalSource {
-  id: string
-  title: string
-  citation?: string
-  section?: string
-  year: number
-  court?: string
-  type: "case" | "legislation" | "regulation" | "guidance"
-  summary: string
+type LegalSource = Omit<LegalSearchResult, "type" | "relevance"> & {
+  type: "case" | "legislation" | "regulation" | "guidance" | "rule"
   relevance: "High" | "Medium" | "Low"
-  source: string
-  url?: string
-  jurisdiction: string
-  tags?: string[]
-  dateAccessed?: string
 }
 
-interface SearchFilters {
-  jurisdictions: string[]
-  types: string[]
-  years: number[]
-  relevance: string[]
-  sources: string[]
+type SearchFilters = LegalSearchFilters
+
+const allowedResultTypes: LegalSource["type"][] = [
+  "case",
+  "legislation",
+  "regulation",
+  "guidance",
+  "rule",
+]
+
+const allowedRelevance: LegalSource["relevance"][] = ["High", "Medium", "Low"]
+
+function normalizeResult(result: LegalSearchResult): LegalSource {
+  const normalizedType = allowedResultTypes.includes(result.type as LegalSource["type"])
+    ? (result.type as LegalSource["type"])
+    : "guidance"
+
+  const normalizedRelevance = allowedRelevance.includes(result.relevance as LegalSource["relevance"])
+    ? (result.relevance as LegalSource["relevance"])
+    : "Medium"
+
+  return {
+    ...result,
+    type: normalizedType,
+    relevance: normalizedRelevance,
+    jurisdiction: result.jurisdiction || "Unknown",
+    source: result.source || "Unknown",
+    summary: result.summary || "",
+    tags: result.tags || [],
+    dateAccessed: result.dateAccessed || new Date().toISOString().split("T")[0],
+  }
+}
+
+function filterResultsBySearchFilters(results: LegalSource[], filters: SearchFilters) {
+  return results.filter((result) => {
+    if (filters.jurisdictions.length > 0 && !filters.jurisdictions.includes(result.jurisdiction)) {
+      return false
+    }
+
+    if (filters.types.length > 0 && !filters.types.includes(result.type)) {
+      return false
+    }
+
+    if (filters.years.length > 0 && (!result.year || !filters.years.includes(result.year))) {
+      return false
+    }
+
+    if (filters.relevance.length > 0 && !filters.relevance.includes(result.relevance)) {
+      return false
+    }
+
+    if (filters.sources.length > 0 && !filters.sources.includes(result.source)) {
+      return false
+    }
+
+    return true
+  })
 }
 
 export function LegalInformation() {
   const [activeTab, setActiveTab] = useState("overview")
   const [searchTerm, setSearchTerm] = useState("")
   const [isSearching, setIsSearching] = useState(false)
+  const [rawSearchResults, setRawSearchResults] = useState<LegalSource[]>([])
   const [searchResults, setSearchResults] = useState<LegalSource[]>([])
   const [savedSources, setSavedSources] = useState<LegalSource[]>([])
   const [searchHistory, setSearchHistory] = useState<string[]>([])
@@ -86,10 +128,16 @@ export function LegalInformation() {
   })
   const [availableFilters, setAvailableFilters] = useState({
     jurisdictions: ["CTH", "VIC", "NSW", "QLD", "WA", "SA", "TAS", "ACT", "NT"],
-    types: ["case", "legislation", "regulation", "guidance"],
+    types: ["case", "legislation", "regulation", "guidance", "rule"],
     years: Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i),
     relevance: ["High", "Medium", "Low"],
-    sources: ["AustLII", "Jade.io", "Federal Register of Legislation", "OAIC Guidelines"],
+    sources: [
+      "AustLII",
+      "Jade.io",
+      "Federal Register of Legislation",
+      "OAIC Guidelines",
+      "Compliance Rules",
+    ],
   })
   const [showFilters, setShowFilters] = useState(false)
   const [notificationCount, setNotificationCount] = useState(0)
@@ -121,143 +169,74 @@ export function LegalInformation() {
 
   // Save to localStorage when savedSources changes
   useEffect(() => {
-    if (savedSources.length > 0) {
-      localStorage.setItem("savedLegalSources", JSON.stringify(savedSources))
-    }
+    localStorage.setItem("savedLegalSources", JSON.stringify(savedSources))
   }, [savedSources])
 
   // Save search history to localStorage
   useEffect(() => {
-    if (searchHistory.length > 0) {
-      localStorage.setItem("legalSearchHistory", JSON.stringify(searchHistory))
-    }
+    localStorage.setItem("legalSearchHistory", JSON.stringify(searchHistory))
   }, [searchHistory])
 
-  const handleSearch = (term: string) => {
+  const handleSearch = async (term: string) => {
     setSearchTerm(term)
-    if (term.trim() === "") {
+    const trimmedTerm = term.trim()
+
+    if (trimmedTerm === "") {
+      setRawSearchResults([])
       setSearchResults([])
       return
     }
 
-    // Add to search history if not already present
-    if (!searchHistory.includes(term) && term.trim() !== "") {
-      setSearchHistory((prev) => [term, ...prev].slice(0, 10))
+    if (!searchHistory.includes(trimmedTerm)) {
+      setSearchHistory((prev) => [trimmedTerm, ...prev].slice(0, 10))
     }
 
     setIsSearching(true)
-    // Simulate API search delay
-    setTimeout(() => {
+
+    try {
+      const response = await searchLegalSources({ term: trimmedTerm, filters })
+      const normalizedAllResults = response.allResults.map((result) => normalizeResult(result))
+
+      setRawSearchResults(normalizedAllResults)
+      setSearchResults(filterResultsBySearchFilters(normalizedAllResults, filters))
+
+      if (response.metadata?.availableFilters) {
+        const available = response.metadata.availableFilters
+        setAvailableFilters((prev) => ({
+          jurisdictions: available.jurisdictions.length > 0 ? available.jurisdictions : prev.jurisdictions,
+          types: available.types.length > 0 ? available.types : prev.types,
+          years: available.years.length > 0 ? available.years : prev.years,
+          relevance: available.relevance.length > 0 ? available.relevance : prev.relevance,
+          sources: available.sources.length > 0 ? available.sources : prev.sources,
+        }))
+      }
+    } catch (error) {
+      console.error("Failed to search legal sources", error)
+      setRawSearchResults([])
+      setSearchResults([])
+    } finally {
       setIsSearching(false)
-      // Mock search results with more detailed data
-      const results: LegalSource[] = [
-        {
-          id: "case-001",
-          title: "Privacy Commissioner v Telstra Corporation Limited",
-          citation: "[2017] FCAFC 4",
-          year: 2017,
-          court: "Federal Court of Australia",
-          summary:
-            "This case established that 'personal information' under the Privacy Act must be information 'about an individual'. Technical data that merely relates to an individual but is not about them may not be covered.",
-          relevance: "High",
-          source: "AustLII",
-          type: "case",
-          jurisdiction: "CTH",
-          url: "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FCAFC/2017/4.html",
-          tags: ["privacy", "personal information", "data"],
-          dateAccessed: new Date().toISOString().split("T")[0],
-        },
-        {
-          id: "case-002",
-          title: "Australian Competition and Consumer Commission v Google LLC",
-          citation: "[2021] FCA 971",
-          year: 2021,
-          court: "Federal Court of Australia",
-          summary:
-            "Google was found to have misled consumers about the collection and use of personal location data on Android devices, violating Australian Consumer Law.",
-          relevance: "Medium",
-          source: "Jade.io",
-          type: "case",
-          jurisdiction: "CTH",
-          url: "https://jade.io/article/823581",
-          tags: ["consumer law", "misleading conduct", "data collection"],
-          dateAccessed: new Date().toISOString().split("T")[0],
-        },
-        {
-          id: "leg-001",
-          title: "Privacy Act 1988 (Cth)",
-          section: "Section 6 - Definitions",
-          year: 1988,
-          type: "legislation",
-          summary:
-            "Defines 'personal information' as information or an opinion about an identified individual, or an individual who is reasonably identifiable, whether the information or opinion is true or not, and whether recorded in material form or not.",
-          relevance: "High",
-          source: "Federal Register of Legislation",
-          jurisdiction: "CTH",
-          url: "https://www.legislation.gov.au/Details/C2021C00452",
-          tags: ["privacy", "definitions", "personal information"],
-          dateAccessed: new Date().toISOString().split("T")[0],
-        },
-        {
-          id: "reg-001",
-          title: "Privacy (Credit Reporting) Code 2014",
-          year: 2014,
-          type: "regulation",
-          summary:
-            "This code regulates the handling of personal information about individuals' credit worthiness by credit reporting bodies and credit providers.",
-          relevance: "Medium",
-          source: "OAIC Guidelines",
-          jurisdiction: "CTH",
-          url: "https://www.oaic.gov.au/privacy/privacy-registers/privacy-codes-register/cr-code",
-          tags: ["credit reporting", "privacy", "code"],
-          dateAccessed: new Date().toISOString().split("T")[0],
-        },
-        {
-          id: "leg-002",
-          title: "Road Safety Act 1986 (Vic)",
-          section: "Section 116 - Inspector identification",
-          year: 1986,
-          type: "legislation",
-          summary: "Provisions relating to inspector identification when conducting vehicle inspections or searches.",
-          relevance: "Medium",
-          source: "AustLII",
-          jurisdiction: "VIC",
-          url: "https://www.austlii.edu.au/au/legis/vic/consol_act/rsa1986125/s116.html",
-          tags: ["road safety", "inspector powers", "identification"],
-          dateAccessed: new Date().toISOString().split("T")[0],
-        },
-      ]
-
-      // Apply filters if any are active
-      let filteredResults = [...results]
-
-      if (filters.jurisdictions.length > 0) {
-        filteredResults = filteredResults.filter((result) => filters.jurisdictions.includes(result.jurisdiction))
-      }
-
-      if (filters.types.length > 0) {
-        filteredResults = filteredResults.filter((result) => filters.types.includes(result.type))
-      }
-
-      if (filters.years.length > 0) {
-        filteredResults = filteredResults.filter((result) => filters.years.includes(result.year))
-      }
-
-      if (filters.relevance.length > 0) {
-        filteredResults = filteredResults.filter((result) => filters.relevance.includes(result.relevance))
-      }
-
-      if (filters.sources.length > 0) {
-        filteredResults = filteredResults.filter((result) => filters.sources.includes(result.source))
-      }
-
-      setSearchResults(filteredResults)
-    }, 1000)
+    }
   }
+
+  useEffect(() => {
+    if (rawSearchResults.length === 0) {
+      setSearchResults(rawSearchResults)
+      return
+    }
+
+    setSearchResults(filterResultsBySearchFilters(rawSearchResults, filters))
+  }, [filters, rawSearchResults])
 
   const handleSaveSource = (source: LegalSource) => {
     if (!savedSources.some((saved) => saved.id === source.id)) {
-      setSavedSources((prev) => [...prev, source])
+      const entry: LegalSource = {
+        ...source,
+        dateAccessed: source.dateAccessed || new Date().toISOString().split("T")[0],
+        tags: source.tags || [],
+      }
+
+      setSavedSources((prev) => [...prev, entry])
       // Show temporary success message
       const notification = document.getElementById("save-notification")
       if (notification) {
