@@ -2,7 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { format } from "date-fns"
+import { getRuleHistory } from "@/app/actions/rules"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Info, Shield, Edit, ExternalLink } from "lucide-react"
@@ -22,9 +24,85 @@ interface Rule {
   status?: string
 }
 
+type RuleHistoryEntry = {
+  id?: string
+  changeType?: string | null
+  changeSummary?: string | null
+  summary?: string | null
+  changes?: unknown
+  createdAt?: string | Date | null
+  user?: {
+    id?: string | null
+    name?: string | null
+  } | null
+}
+
+const getHistorySummary = (entry: RuleHistoryEntry) => {
+  const summaryCandidates = [entry.changeSummary, entry.summary]
+
+  for (const candidate of summaryCandidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate
+    }
+  }
+
+  if (typeof entry.changes === "string" && entry.changes.trim().length > 0) {
+    return entry.changes
+  }
+
+  if (entry.changes && typeof entry.changes === "object" && "summary" in entry.changes) {
+    const summary = (entry.changes as { summary?: unknown }).summary
+
+    if (typeof summary === "string" && summary.trim().length > 0) {
+      return summary
+    }
+  }
+
+  if (entry.changeType) {
+    const normalized = entry.changeType.replace(/_/g, " ").trim()
+
+    if (normalized) {
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+    }
+  }
+
+  return "Rule updated"
+}
+
+const formatHistoryTimestamp = (timestamp: RuleHistoryEntry["createdAt"]) => {
+  if (!timestamp) {
+    return "Unknown date"
+  }
+
+  const date = typeof timestamp === "string" ? new Date(timestamp) : timestamp
+
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "Unknown date"
+  }
+
+  try {
+    return format(date, "PPpp")
+  } catch {
+    return date.toLocaleString()
+  }
+}
+
+const getHistoryUserName = (entry: RuleHistoryEntry) => {
+  const name = entry.user?.name
+
+  if (typeof name === "string" && name.trim().length > 0) {
+    return name
+  }
+
+  return "Unknown user"
+}
+
 export function RuleDisplay({ rule }: { rule: Rule }) {
   const [expanded, setExpanded] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<RuleHistoryEntry[]>([])
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const router = useRouter()
 
   // Map rule categories to their respective styling
@@ -54,24 +132,50 @@ export function RuleDisplay({ rule }: { rule: Rule }) {
   const category = rule.category || "privacy"
   const { icon, color, bgColor } = categoryMap[category] || categoryMap.privacy
 
-  // Mock rule history data
-  const ruleHistory = [
-    {
-      date: "2025-04-20",
-      user: "Sarah Chen",
-      change: "Updated requirement to reflect new Privacy Act amendments",
-    },
-    {
-      date: "2025-03-15",
-      user: "David Wilson",
-      change: "Added enforcement details",
-    },
-    {
-      date: "2025-02-10",
-      user: "System",
-      change: "Rule created",
-    },
-  ]
+  useEffect(() => {
+    if (!showHistory) {
+      return
+    }
+
+    let isCancelled = false
+
+    const fetchHistory = async () => {
+      setIsHistoryLoading(true)
+      setHistoryError(null)
+
+      try {
+        const result = await getRuleHistory(rule.id)
+
+        if (isCancelled) {
+          return
+        }
+
+        if (result.success) {
+          const entries = Array.isArray(result.history) ? (result.history as RuleHistoryEntry[]) : []
+          setHistory(entries)
+        } else {
+          setHistory([])
+          setHistoryError(result.error ?? "Failed to fetch rule history")
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error("Error loading rule history", error)
+          setHistory([])
+          setHistoryError("Failed to fetch rule history")
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsHistoryLoading(false)
+        }
+      }
+    }
+
+    void fetchHistory()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [rule.id, showHistory])
 
   const handleEditRule = () => {
     // In a real implementation, this would navigate to the CMS rule editor
@@ -102,7 +206,13 @@ export function RuleDisplay({ rule }: { rule: Rule }) {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setExpanded(!expanded)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              aria-label={expanded ? "Collapse rule details" : "Expand rule details"}
+              onClick={() => setExpanded(!expanded)}
+            >
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
           </div>
@@ -164,15 +274,23 @@ export function RuleDisplay({ rule }: { rule: Rule }) {
               {showHistory && (
                 <div className="mt-3 bg-gray-50 p-3 rounded-md border border-gray-200">
                   <h4 className="text-sm font-medium text-gray-900 mb-2">Rule History</h4>
-                  <div className="space-y-2">
-                    {ruleHistory.map((item, index) => (
-                      <div key={index} className="text-xs border-l-2 border-gray-300 pl-3 py-1">
-                        <div className="font-medium">{item.date}</div>
-                        <div className="text-gray-600">{item.change}</div>
-                        <div className="text-gray-500">By: {item.user}</div>
-                      </div>
-                    ))}
-                  </div>
+                  {isHistoryLoading ? (
+                    <p className="text-xs text-gray-500">Loading history...</p>
+                  ) : historyError ? (
+                    <p className="text-xs text-red-600">{historyError}</p>
+                  ) : history.length === 0 ? (
+                    <p className="text-xs text-gray-500">No history available for this rule.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {history.map((item, index) => (
+                        <div key={item.id ?? index} className="text-xs border-l-2 border-gray-300 pl-3 py-1">
+                          <div className="font-medium">{formatHistoryTimestamp(item.createdAt)}</div>
+                          <div className="text-gray-600">{getHistorySummary(item)}</div>
+                          <div className="text-gray-500">By: {getHistoryUserName(item)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
