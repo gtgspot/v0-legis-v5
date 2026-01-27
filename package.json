@@ -92,6 +92,11 @@
     "vaul": "^0.9.6",
     "zod": "latest"
   },
+  "pnpm": {
+    "overrides": {
+      "tar": ">=7.5.4"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
