@@ -1,36 +1,45 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { db, schema, eq } from "@/lib/db"
 import {
-  processRequestHeaders,
   extractHeaderTokens,
-  extractHeaderKeyValues,
-  getAuthDetails,
   extractDataLexHeaders,
 } from "@/lib/api-headers"
+import { and } from "drizzle-orm"
+
+async function validateApiKey(request: NextRequest) {
+  const apiKey = request.headers.get("x-api-key")
+
+  if (!apiKey) {
+    return null
+  }
+
+  return db.query.apiKeys.findFirst({
+    where: and(eq(schema.apiKeys.key, apiKey), eq(schema.apiKeys.isActive, true)),
+  })
+}
 
 export async function GET(request: NextRequest) {
-  // Process all headers according to their tokenization configuration
-  const processedHeaders = processRequestHeaders(request.headers)
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
 
-  // Extract specific headers
-  const authTokens = extractHeaderTokens(request.headers, "authorization")
-  const contentTypeTokens = extractHeaderTokens(request.headers, "content-type")
-  const cookieKeyValues = extractHeaderKeyValues(request.headers, "cookie")
+  const apiKey = await validateApiKey(request)
 
-  // Get auth details
-  const authDetails = getAuthDetails(request.headers)
+  if (!apiKey) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const safeHeaders = {
+    accept: extractHeaderTokens(request.headers, "accept"),
+    contentType: extractHeaderTokens(request.headers, "content-type"),
+    userAgent: extractHeaderTokens(request.headers, "user-agent"),
+  }
 
   // Extract DataLex specific headers
   const dataLexHeaders = extractDataLexHeaders(request.headers)
 
-  // Return the processed headers
   return NextResponse.json({
-    allProcessedHeaders: processedHeaders,
-    specificHeaders: {
-      authorization: authTokens,
-      contentType: contentTypeTokens,
-      cookies: cookieKeyValues,
-    },
-    authDetails,
+    safeHeaders,
     dataLexHeaders,
   })
 }

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { db, schema, eq } from "@/lib/db"
 import { createAuditLog } from "@/lib/audit"
 import { z } from "zod"
+import { and } from "drizzle-orm"
 
 // API key validation
 async function validateApiKey(request: NextRequest) {
@@ -12,7 +13,7 @@ async function validateApiKey(request: NextRequest) {
   }
 
   const key = await db.query.apiKeys.findFirst({
-    where: eq(schema.apiKeys.key, apiKey) && eq(schema.apiKeys.isActive, true),
+    where: and(eq(schema.apiKeys.key, apiKey), eq(schema.apiKeys.isActive, true)),
     with: {
       createdBy: true,
     },
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     // Get rules to validate against
     let rulesToCheck = await db.query.rules.findMany({
-      where: eq(schema.rules.isPublic, true) && eq(schema.rules.status, "active"),
+      where: and(eq(schema.rules.isPublic, true), eq(schema.rules.status, "active")),
     })
 
     // Filter by rule IDs if provided

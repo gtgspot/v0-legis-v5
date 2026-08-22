@@ -1,6 +1,7 @@
 "use server"
 
 import { caseLawData } from "@/lib/api"
+import { getCurrentUser } from "@/lib/auth"
 import { db } from "@/lib/db"
 import * as schema from "@/lib/schema"
 import { and, eq, ilike, or } from "drizzle-orm"
@@ -381,6 +382,9 @@ export async function searchLegalSources({
   term: string
   filters?: Partial<LegalSearchFilters>
 }): Promise<LegalSearchResponse> {
+  const currentUser = await getCurrentUser()
+  const canReadRules = Boolean(currentUser && ["admin", "editor", "viewer"].includes(currentUser.role))
+
   const query = term.trim()
 
   if (!query) {
@@ -412,24 +416,26 @@ export async function searchLegalSources({
     limit: 25,
   })
 
-  const rulesPromise = db.query.rules.findMany({
-    where: and(
-      eq(schema.rules.isActive, true),
-      or(
-        ilike(schema.rules.title, `%${query}%`),
-        ilike(schema.rules.description, `%${query}%`),
-        ilike(schema.rules.content, `%${query}%`),
-      ),
-    ),
-    with: {
-      legalSources: {
+  const rulesPromise: Promise<DbRule[]> = canReadRules
+    ? db.query.rules.findMany({
+        where: and(
+          eq(schema.rules.isActive, true),
+          or(
+            ilike(schema.rules.title, `%${query}%`),
+            ilike(schema.rules.description, `%${query}%`),
+            ilike(schema.rules.content, `%${query}%`),
+          ),
+        ),
         with: {
-          legalSource: true,
+          legalSources: {
+            with: {
+              legalSource: true,
+            },
+          },
         },
-      },
-    },
-    limit: 15,
-  })
+        limit: 15,
+      })
+    : Promise.resolve([])
 
   const [legalSources, rules, externalCases] = await Promise.all([
     legalSourcesPromise,
@@ -469,4 +475,3 @@ export async function searchLegalSources({
     metadata,
   }
 }
-

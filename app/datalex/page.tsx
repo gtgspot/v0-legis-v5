@@ -483,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
           id="datalex-iframe"
           className="w-full min-h-screen border-0"
           title="DataLex Application Development Tools"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+          sandbox="allow-scripts allow-forms allow-popups"
         ></iframe>
       </div>
     </div>
