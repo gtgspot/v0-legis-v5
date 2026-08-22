@@ -15,7 +15,7 @@ export async function updateSettings(category: string, settings: Record<string, 
     for (const [key, value] of Object.entries(settings)) {
       // Check if setting exists
       const existingSetting = await db.query.settings.findFirst({
-      where: and(eq(schema.settings.category, category), eq(schema.settings.key, key)),
+        where: and(eq(schema.settings.category, category), eq(schema.settings.key, key)),
       })
 
       if (existingSetting) {

@@ -63,7 +63,6 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "latest",
-    "drizzle-kit": "latest",
     "drizzle-orm": "latest",
     "embla-carousel-react": "8.5.1",
     "expo-sqlite": "latest",
@@ -73,7 +72,7 @@
     "kysely": "latest",
     "lucide-react": "^0.454.0",
     "mysql2": "latest",
-    "next": "15.2.4",
+    "next": "^16.3.2",
     "next-themes": "^0.4.4",
     "pg": "latest",
     "postgres": "latest",
@@ -93,17 +92,17 @@
     "zod": "latest"
   },
   "devDependencies": {
-    "@types/node": "^22",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",
-    "@vitejs/plugin-react": "^4.3.3",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5.1.0",
     "jsdom": "^26.1.0",
-    "vitest": "^2.1.8"
+    "postcss": "^8",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }
