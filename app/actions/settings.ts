@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db, schema, eq } from "@/lib/db"
 import { createAuditLog } from "@/lib/audit"
 import { requireRole } from "@/lib/auth"
+import { and } from "drizzle-orm"
 
 // Function to update settings
 export async function updateSettings(category: string, settings: Record<string, any>) {
@@ -14,7 +15,7 @@ export async function updateSettings(category: string, settings: Record<string, 
     for (const [key, value] of Object.entries(settings)) {
       // Check if setting exists
       const existingSetting = await db.query.settings.findFirst({
-        where: eq(schema.settings.category, category) && eq(schema.settings.key, key),
+      where: and(eq(schema.settings.category, category), eq(schema.settings.key, key)),
       })
 
       if (existingSetting) {
